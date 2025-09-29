@@ -44,7 +44,7 @@
     <div id="sidebar" class="fixed top-0 left-0 h-screen w-64 bg-white shadow-2xl ring-1 ring-gray-200 overflow-y-auto p-4 flex-shrink-0 z-50 
             transform -translate-x-full transition-transform duration-300
             lg:static lg:transform-none lg:h-[calc(100vh-2rem)] lg:mt-4 lg:mb-4 lg:ml-4 lg:mr-4 lg:rounded-xl">
-        <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Sessions</h2>
+        <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2 text-center">Sessions</h2>
         <a href="/" id="new-chat-link" class="block w-full text-center py-2 mb-4 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition duration-200">
             + New Chat
         </a>
@@ -69,22 +69,18 @@
                 <p class="text-sm opacity-80 mt-1">Current Session: <b id="current-session-display">{{ current_session_id }}</b></p>
             </div>
             
-            <!-- NEW: Logo/Icon on the top right -->
-            <div id="logo-icon" class="p-2 ml-3 opacity-90 hover:opacity-100 transition duration-200">
-                <!-- Using a simple CPU/Bot icon SVG for representation -->
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect>
-                    <path d="M9 1v2"></path>
-                    <path d="M15 1v2"></path>
-                    <path d="M9 21v2"></path>
-                    <path d="M15 21v2"></path>
-                    <path d="M21 9h2"></path>
-                    <path d="M21 15h2"></path>
-                    <path d="M1 9h2"></path>
-                    <path d="M1 15h2"></path>
-                    <path d="M11 15h2"></path>
-                    <path d="M11 9h2"></path>
-                </svg>
+            <!-- MODIFIED: Replaced SVG with an <img> tag using the uploaded image file name -->
+            <div id="logo-icon" class="p-2 ml-3 opacity-90 transition duration-200">
+                <!-- 
+                    NOTE: The image source uses the filename 'image_19fe10.png'. 
+                    In a Flask setup, ensure this file is accessible (e.g., placed in a 'static' folder).
+                -->
+                <img 
+                    src="image_19fe10.png" 
+                    alt="ADK Agent Logo" 
+                    class="h-12 w-12 rounded-full border-2 border-white shadow-lg object-cover"
+                    onerror="this.onerror=null; this.src='https://avatars.githubusercontent.com/u/67197854';"
+                />
             </div>
             
         </header>
