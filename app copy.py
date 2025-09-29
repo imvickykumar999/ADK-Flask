@@ -15,7 +15,7 @@ from google.genai.types import Content, Part
 # Ensure 'instance/agent.py' exists and exports a 'root_agent' instance for this to work.
 try:
     # If using ADK, this is where your agent definition lives
-    from instance.agent import root_agent
+    from templates.agent import root_agent
 except ImportError:
     print("WARNING: 'instance.agent' could not be imported. Agent functionality will be disabled.")
     root_agent = None
