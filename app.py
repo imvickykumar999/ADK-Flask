@@ -1,11 +1,9 @@
 import os
 import asyncio
-import json
 import sqlite3
-import secrets # Import for generating secure session IDs
+import secrets
 from dotenv import load_dotenv
-# FIX: Added 'Response' to the import list
-from flask import Flask, request, jsonify, g, redirect, url_for, make_response, Response 
+from flask import Flask, request, jsonify, g, redirect, url_for, make_response, Response, render_template
 # MODIFIED: Use DatabaseSessionService for persistent sessions
 from google.adk.sessions import DatabaseSessionService 
 from google.adk.runners import Runner
@@ -28,12 +26,11 @@ APP_NAME = "agent_flask"
 USER_ID = "web_user" # Keeping a fixed user ID for this web demo
 
 # --- Database Configuration ---
-# CONSOLIDATED: Use a single file name for both the UI history and the ADK session service.
 DATABASE = 'history.db'
-# MODIFIED: Database URL for ADK Session Persistence now points to the same file
 DB_URL = os.getenv("SESSION_DB_URL", f"sqlite:///./{DATABASE}")
 
-# Initialize Flask App EARLY to ensure it's available for decorators
+# Initialize Flask App
+# Flask will look for templates in a 'templates' folder automatically
 app = Flask(__name__)
 
 # --- Database Functions ---
@@ -117,13 +114,11 @@ def get_all_session_ids() -> list[str]:
         return []
 
 
-# MODIFIED: Initialize DatabaseSessionService using the consolidated DB_URL
+# Initialize DatabaseSessionService using the consolidated DB_URL
 session_service = DatabaseSessionService(db_url=DB_URL)
 
 # Create the runner with the agent only if root_agent was successfully imported
 runner = None
-# We no longer need adk_sessions dictionary to track initialization, 
-# as DatabaseSessionService manages persistence, but we keep it for now for simplicity 
 adk_sessions = {} # Dictionary to track which sessions have been accessed since restart
 
 if root_agent:
@@ -142,9 +137,6 @@ if root_agent:
             app.logger.info(f"Initializing ADK session check for {USER_ID}/{session_id}")
             
             try:
-                # FIX: Corrected the way arguments are passed to get_session. 
-                # Using keyword arguments for robustness.
-                
                 session = await session_service.get_session(
                     app_name=APP_NAME, 
                     user_id=USER_ID, 
@@ -152,7 +144,6 @@ if root_agent:
                 )
                 
                 if not session:
-                    # FIX: Removed the unexpected 'history=[]' argument from create_session call
                     await session_service.create_session(
                         app_name=APP_NAME,
                         user_id=USER_ID,
@@ -160,7 +151,6 @@ if root_agent:
                     )
 
             except Exception as e:
-                 # Catch initialization errors specific to the DatabaseSessionService
                 app.logger.error(f"DatabaseSessionService Initialization Error: {e}")
                 raise 
             
@@ -185,6 +175,8 @@ def get_history_api():
     """Returns the chat history and all sessions for the current session ID."""
     current_session_id = request.args.get('session_id')
     if not current_session_id:
+        # Return an empty set if no session ID is provided, but this shouldn't happen 
+        # as the index route should always ensure one is present.
         return jsonify({"history": [], "sessions": []}), 200
 
     history = load_history(current_session_id)
@@ -209,8 +201,8 @@ def chat():
     # Ensure the ADK session is initialized/loaded from the database
     if root_agent and current_session_id not in adk_sessions:
         try:
-             # Synchronously call the async session initializer
-             asyncio.run(initialize_adk_session(current_session_id))
+            # Synchronously call the async session initializer
+            asyncio.run(initialize_adk_session(current_session_id))
         except Exception as e:
             app.logger.error(f"ADK Session Initialization Error: {e}")
             return jsonify({"response": f"ADK Session Init Error: {str(e)}"}), 500
@@ -260,7 +252,6 @@ def chat():
             status_code = 200
             
             # 2. Save agent message to UI history DB (history.db) on success
-            # The agent's history is automatically saved by DatabaseSessionService
             save_message(current_session_id, "agent", response_text)
 
     except Exception as e:
@@ -276,352 +267,19 @@ def index():
     
     # 1. Check for/create session_id and handle redirect if needed
     session_id_result = get_or_create_session_id()
-    # FIX: Check against the Flask Response class type, as flask.redirect() returns a Response object.
+    
     if isinstance(session_id_result, Response): 
+        # This is a redirect object returned by get_or_create_session_id
         return session_id_result
     
     current_session_id = session_id_result
 
-    # 2. Pass the current session ID to the HTML generator
-    html_content = get_html_content(current_session_id)
-    response = make_response(html_content)
-    return response
-
-# --- Frontend HTML/JS/CSS (Inlined for single-file deployment) ---
-
-def get_html_content(current_session_id):
-    """Generates the single HTML page with inline CSS and JavaScript for the chat UI."""
-    
-    html_template = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ADK Agent Web Chat - Session {current_session_id}</title>
-        <!-- Load Tailwind CSS CDN -->
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            /* Custom Scrollbar for Chat Window */
-            .chat-window::-webkit-scrollbar {{
-                width: 8px;
-            }}
-            .chat-window::-webkit-scrollbar-thumb {{
-                background-color: #a3a3a3; /* gray-400 */
-                border-radius: 4px;
-            }}
-            .chat-window::-webkit-scrollbar-track {{
-                background-color: #f3f4f6; /* gray-100 */
-            }}
-            /* Use Inter font */
-            body {{
-                font-family: 'Inter', sans-serif;
-            }}
-        </style>
-        <script>
-            // Set up Tailwind configuration for the Inter font
-            tailwind.config = {{
-                theme: {{
-                    extend: {{
-                        fontFamily: {{
-                            sans: ['Inter', 'sans-serif'],
-                        }}
-                    }}
-                }}
-            }}
-        </script>
-    </head>
-    <!-- MODIFIED: Wrapper for the whole layout, using vh to fill screen -->
-    <body class="bg-gray-100 min-h-screen flex w-full"> 
-        
-        <!-- Sidebar for Session History -->
-        <!-- MODIFIED: Fixed sidebar on mobile, static on desktop. 
-                     Uses transform to hide/show off-screen on mobile. -->
-        <div id="sidebar" class="fixed top-0 left-0 h-screen w-64 bg-white shadow-2xl ring-1 ring-gray-200 overflow-y-auto p-4 flex-shrink-0 z-50 
-               transform -translate-x-full transition-transform duration-300
-               lg:static lg:transform-none lg:h-[calc(100vh-2rem)] lg:mt-4 lg:mb-4 lg:ml-4 lg:mr-0 lg:rounded-xl">
-            <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Sessions</h2>
-            <a href="/" id="new-chat-link" class="block w-full text-center py-2 mb-4 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition duration-200">
-                + New Chat
-            </a>
-            <div id="session-list" class="space-y-1">
-                <!-- Session links will be populated here -->
-            </div>
-        </div>
-        
-        <!-- Main Chat Area -->
-        <!-- MODIFIED: Full width (w-full) on all screens, uses flex-grow to take space. 
-                     Uses h-screen on mobile and h-[calc(100vh-2rem)] on desktop for better fit. -->
-        <div class="w-full bg-white shadow-2xl ring-1 ring-gray-200 rounded-none overflow-hidden flex flex-col h-screen flex-grow 
-             lg:h-[calc(100vh-2rem)] lg:mt-4 lg:mb-4 lg:mr-4 lg:rounded-xl">
-            
-            <!-- Header -->
-            <!-- ADDED: Hamburger button and flex layout to place it on the left -->
-            <header class="p-4 bg-indigo-600 text-white shadow-lg rounded-t-none lg:rounded-t-xl flex items-center">
-                <!-- Hamburger Button, visible only below large screen size -->
-                <button id="menu-button" class="lg:hidden p-2 mr-3 rounded-md hover:bg-indigo-700 transition duration-200 focus:outline-none focus:ring-2 focus:ring-white">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                </button>
-                <div class="flex-grow">
-                    <h1 class="text-2xl font-extrabold tracking-tight">ADK Agent Chat</h1>
-                    <p class="text-sm opacity-80 mt-1">Current Session: <b id="current-session-display">{current_session_id}</b></p>
-                </div>
-            </header>
-
-            <!-- Chat Window (Content will be filled by JavaScript on load) -->
-            <div id="chat-window" class="chat-window flex-grow overflow-y-auto p-4 space-y-4">
-                <!-- Chat messages go here -->
-            </div>
-
-            <!-- Input Form -->
-            <div class="p-4 border-t border-gray-200 bg-white">
-                <form id="chat-form" class="flex space-x-3">
-                    <input 
-                        type="text" 
-                        id="user-input" 
-                        placeholder="Type your message here..." 
-                        required
-                        autocomplete="off"
-                        class="flex-grow p-3 border-2 border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    />
-                    <button 
-                        type="submit" 
-                        id="send-button"
-                        class="bg-indigo-600 text-white p-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition duration-200 active:scale-[0.98] disabled:bg-gray-400"
-                    >
-                        Send
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <script>
-            document.addEventListener('DOMContentLoaded', () => {{
-                const currentSessionId = "{current_session_id}";
-                const form = document.getElementById('chat-form');
-                const userInput = document.getElementById('user-input');
-                const chatWindow = document.getElementById('chat-window');
-                const sendButton = document.getElementById('send-button');
-                const sidebar = document.getElementById('sidebar');
-                const menuButton = document.getElementById('menu-button');
-                const sessionList = document.getElementById('session-list');
-
-                // --- Sidebar Logic ---
-                const overlay = document.createElement('div');
-                overlay.className = 'fixed inset-0 bg-black opacity-0 transition-opacity duration-300 z-40 lg:hidden pointer-events-none';
-                document.body.appendChild(overlay);
-
-                let isSidebarOpen = false;
-
-                function toggleSidebar(open) {{
-                    // Only run on mobile (screen width < 1024px, the 'lg' breakpoint)
-                    if (window.innerWidth >= 1024) return;
-                    
-                    isSidebarOpen = (open !== undefined) ? open : !isSidebarOpen;
-
-                    if (isSidebarOpen) {{
-                        sidebar.classList.remove('-translate-x-full');
-                        overlay.classList.remove('opacity-0', 'pointer-events-none');
-                        overlay.classList.add('opacity-50', 'pointer-events-auto');
-                    }} else {{
-                        sidebar.classList.add('-translate-x-full');
-                        overlay.classList.remove('opacity-50', 'pointer-events-auto');
-                        overlay.classList.add('opacity-0', 'pointer-events-none');
-                    }}
-                }}
-
-                menuButton.addEventListener('click', () => {{
-                    toggleSidebar();
-                }});
-                
-                // Close sidebar when clicking the overlay
-                overlay.addEventListener('click', () => {{
-                    toggleSidebar(false);
-                }});
-
-                // --- End Sidebar Logic ---
-
-                // Function to add a message to the chat window
-                function addMessage(text, role) {{
-                    const isUser = role === 'user';
-                    const messageElement = document.createElement('div');
-                    
-                    if (isUser) {{
-                        messageElement.className = 'flex justify-end';
-                        messageElement.innerHTML = `
-                            <div class="bg-indigo-600 text-white p-4 rounded-xl rounded-br-sm max-w-[80%] shadow-lg break-words whitespace-pre-wrap">
-                                <!-- Placeholder will be filled with text content -->
-                            </div>
-                        `;
-                    }} else {{ // agent
-                        messageElement.className = 'flex justify-start';
-                        messageElement.innerHTML = `
-                            <div class="bg-gray-200 text-gray-800 p-4 rounded-xl rounded-tl-sm max-w-[80%] shadow-lg break-words whitespace-pre-wrap">
-                                <!-- Placeholder will be filled with text content -->
-                            </div>
-                        `;
-                    }}
-                    
-                    // Sanitize text and handle HTML content
-                    const contentDiv = messageElement.querySelector('div:last-child');
-                    
-                    if (role === 'agent' && text.includes('<b')) {{
-                        contentDiv.innerHTML = text; 
-                    }} else {{
-                        contentDiv.textContent = text;
-                    }}
-                    
-                    chatWindow.appendChild(messageElement);
-                    // Scroll to the latest message
-                    chatWindow.scrollTop = chatWindow.scrollHeight;
-                }}
-
-                // Function to populate the sidebar with session links
-                function populateSessionList(sessions) {{
-                    sessionList.innerHTML = ''; // Clear existing list
-                    sessions.forEach(sessionId => {{
-                        const link = document.createElement('a');
-                        link.href = `/?session_id=${'{sessionId}'}`;
-                        
-                        link.className = `block p-2 text-sm rounded-lg hover:bg-gray-200 transition duration-150 truncate \
-                            $${{sessionId}} === currentSessionId ? 'bg-indigo-100 font-semibold text-indigo-700' : 'text-gray-700'`;
-                        
-                        link.textContent = `Chat #$${{sessionId}}`; // Escaped again for text content
-                        link.addEventListener('click', () => toggleSidebar(false)); // Close sidebar on session change
-                        sessionList.appendChild(link);
-                    }});
-                }}
-                
-                // Function to load and display chat history and sessions
-                async function loadChatData() {{
-                    try {{
-                        const response = await fetch(`/history?session_id=${'{currentSessionId}'}`);
-                        const data = await response.json();
-                        
-                        // 1. Clear chat window first
-                        chatWindow.innerHTML = '';
-
-                        // 2. Load History
-                        const history = data.history || [];
-                        if (history.length === 0) {{
-                            addMessage(`Welcome to Chat #<b class='text-indigo-700'>${'{currentSessionId}'}</b>! I am your ADK Agent, ready to assist you. Ask me anything!`, 'agent');
-                        }} else {{
-                            history.forEach(msg => {{
-                                if (msg.role && msg.text) {{
-                                    addMessage(msg.text, msg.role);
-                                }}
-                            }});
-                        }}
-                        
-                        // 3. Populate Session List
-                        populateSessionList(data.sessions || []);
-
-                    }} catch (error) {{
-                        console.error('Failed to load chat data:', error);
-                        // Fallback welcome message
-                        chatWindow.innerHTML = '';
-                        addMessage('Network or database error. Please refresh. If this is a new session, you can start chatting.', 'agent');
-                    }}
-                }}
-
-                // Load chat data when the page loads
-                loadChatData();
-
-                // Function to show a loading state
-                function showLoading() {{
-                    let loadingDiv = document.getElementById('loading-message');
-                    if (!loadingDiv) {{
-                        loadingDiv = document.createElement('div');
-                        loadingDiv.id = 'loading-message';
-                        loadingDiv.className = 'flex justify-start';
-                        loadingDiv.innerHTML = `
-                            <div class="bg-gray-200 text-gray-600 p-4 rounded-xl rounded-tl-sm max-w-[80%] shadow-md">
-                                <span class="animate-pulse">Agent is thinking...</span>
-                            </div>
-                        `;
-                        chatWindow.appendChild(loadingDiv);
-                        chatWindow.scrollTop = chatWindow.scrollHeight;
-                    }}
-                    return loadingDiv;
-                }}
-
-                // Function to hide the loading state
-                function hideLoading() {{
-                    const loadingDiv = document.getElementById('loading-message');
-                    if (loadingDiv) {{
-                        loadingDiv.remove();
-                    }}
-                }}
-
-                // Handle form submission
-                form.addEventListener('submit', async (e) => {{
-                    e.preventDefault();
-                    
-                    const message = userInput.value.trim();
-                    if (!message) return;
-
-                    // 1. Display user message
-                    addMessage(message, 'user');
-                    
-                    // 2. Clear input and disable input/button
-                    userInput.value = '';
-                    sendButton.disabled = true;
-                    userInput.disabled = true;
-
-                    // 3. Show loading indicator
-                    showLoading();
-
-                    try {{
-                        // 4. Send message to Flask backend, including session_id in the query
-                        const response = await fetch(`/chat?session_id=${'{currentSessionId}'}`, {{
-                            method: 'POST',
-                            headers: {{
-                                'Content-Type': 'application/json',
-                            }},
-                            body: JSON.stringify({{ message: message }})
-                        }});
-
-                        const data = await response.json();
-
-                        // 5. Hide loading indicator
-                        hideLoading();
-
-                        // 6. Display agent response
-                        if (response.ok) {{
-                            addMessage(data.response, 'agent');
-                            // After a successful chat, reload session list in case a new message updates the session list
-                            loadChatData(); 
-                        }} else {{
-                            addMessage(`Error: ${'{data.response}'}`, 'agent');
-                            console.error('Agent API Error:', data.response);
-                        }}
-
-                    }} catch (error) {{
-                        // 5. Hide loading indicator on error
-                        hideLoading();
-                        // 6. Display network error
-                        addMessage('Network Error: Could not reach the server.', 'agent');
-                        console.error('Fetch Error:', error);
-                    }} finally {{
-                        // 7. Re-enable input/button
-                        sendButton.disabled = false;
-                        userInput.disabled = false;
-                        userInput.focus();
-                    }}
-                }});
-            }});
-        </script>
-    </body>
-    </html>
-    """
-    return html_template
+    # 2. Render the index.html template, passing the current session ID
+    return render_template('index.html', current_session_id=current_session_id)
 
 # --- Run the Flask App ---
 if __name__ == "__main__":
     # Initialize database when the application starts
     init_db()
-    # To run this file, you'll need to:
-    # 1. Have 'instance/agent.py' (or mock it)
-    # 2. Install dependencies (flask, python-dotenv, google-genai, google-adk)
-    # 3. Run from the terminal: python app.py
+    # To run this file, you'll need the required dependencies and instance/agent.py
     app.run(debug=True, host='0.0.0.0', port=5000)
