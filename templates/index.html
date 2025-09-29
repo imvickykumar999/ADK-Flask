@@ -70,19 +70,21 @@
                 <p class="text-sm opacity-80 mt-1">Current Session: <b id="current-session-display">{{ current_session_id }}</b></p>
             </div>
             
-            <!-- MODIFIED: Logo container padding changed to p-0. Image size increased to h-10 w-10. -->
-            <div id="logo-icon" class="p-0 ml-3 opacity-90 transition duration-200">
-                <!-- 
-                    NOTE: The image source uses the filename 'image_19fe10.png'. 
-                    In a Flask setup, ensure this file is accessible (e.g., placed in a 'static' folder).
-                -->
-                <img 
-                    src="image_19fe10.png" 
-                    alt="ADK Agent Logo" 
-                    class="h-12 w-12 rounded-full border-2 border-white shadow-lg object-cover"
-                    onerror="this.onerror=null; this.src='https://avatars.githubusercontent.com/u/67197854';"
-                />
-            </div>
+            <!-- MODIFIED: Wrapped logo in an anchor tag for clickability -->
+            <a href="https://github.com/imvickykumar999/ADK-Flask" target="_blank" class="block">
+                <div id="logo-icon" class="p-0 ml-3 opacity-90 transition duration-200 hover:opacity-100 cursor-pointer">
+                    <!-- 
+                        NOTE: The image source uses the filename 'image_19fe10.png'. 
+                        In a Flask setup, ensure this file is accessible (e.g., placed in a 'static' folder).
+                    -->
+                    <img 
+                        src="image_19fe10.png" 
+                        alt="ADK Agent Logo" 
+                        class="h-12 w-12 rounded-full border-2 border-white shadow-lg object-cover"
+                        onerror="this.onerror=null; this.src='https://avatars.githubusercontent.com/u/67197854';"
+                    />
+                </div>
+            </a>
             
         </header>
 
